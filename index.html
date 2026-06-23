@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STUDENT & EVENT DASHBOARD (FIREBASE)</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; }
+        body { display: flex; height: 100vh; background-color: #f4f6f9; }
+        .sidebar { width: 250px; background-color: #2C3E50; color: white; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .sidebar h2 { margin-bottom: 20px; font-size: 20px; text-align: center; color: #1ABC9C; }
+        .sidebar button { background: none; border: none; color: #BDC3C7; padding: 12px; text-align: left; font-size: 16px; cursor: pointer; border-radius: 4px; transition: 0.3s; display: none; } /* Initially hidden */
+        .sidebar button:hover, .sidebar button.active { background-color: #34495E; color: white; font-weight: bold; }
+        .main-content { flex: 1; padding: 30px; overflow-y: auto; }
+        .page { display: none; }
+        .page.active { display: block; }
+        .charts-container { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px; }
+        .chart-box { background: white; padding: 20px; border-radius: 8px; flex: 1; min-width: 300px; max-width: 500px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; }
+        .chart-box canvas { width: 100% !important; height: auto !important; }
+        form { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+        input, select { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 100%; }
+        button.btn-submit { background-color: #2ECC71; color: white; border: none; padding: 10px; cursor: pointer; font-weight: bold; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; background: white; margin-top: 20px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #34495E; color: white; }
+        .btn-delete { background-color: #E74C3C; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 4px; }
+        #calendar { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 900px; margin-top: 20px; }
+        .auth-container { max-width: 400px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .auth-toggle { text-align: center; margin-top: 15px; cursor: pointer; color: #3498DB; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>FIREBASE DASHBOARD</h2>
+        <button id="btn-dashboard" onclick="showPage('dashboard-page')">📊 DASHBOARD</button>
+        <button id="btn-students" onclick="showPage('students-page')">👨‍🎓 STUDENTS</button>
+        <button id="btn-events" onclick="showPage('events-page')">📅 EVENTS</button>
+        <button id="btn-logout" onclick="handleLogout()" style="color: #E74C3C;">🚪 LOGOUT</button>
+    </div>
+
+    <div class="main-content">
+
+        <div id="auth-page" class="page active">
+            <div class="auth-container" id="signin-box">
+                <h2>Sign In (Firebase Auth)</h2>
+                <form onsubmit="handleSignIn(event)">
+                    <input type="email" id="login-email" placeholder="Enter email address" required>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                    <button type="submit" class="btn-submit">SIGN IN</button>
+                </form>
+                <p class="auth-toggle" onclick="toggleAuth(false)">Don't have an account? Register Here</p>
+            </div>
+
+            <div class="auth-container" id="register-box" style="display: none;">
+                <h2>Register</h2>
+                <form onsubmit="handleRegister(event)">
+                    <input type="email" id="reg-email" placeholder="Enter email address" required>
+                    <input type="password" id="reg-password" placeholder="Password (min 6 chars)" required>
+                    <button type="submit" class="btn-submit">REGISTER</button>
+                </form>
+                <p class="auth-toggle" onclick="toggleAuth(true)">Already have an account? Sign In</p>
+            </div>
+        </div>
+
+        <div id="dashboard-page" class="page">
+            <h2>Analytics Dashboard</h2>
+            <div class="charts-container">
+                <div class="chart-box"><canvas id="marksChart"></canvas></div>
+                <div class="chart-box"><canvas id="branchChart"></canvas></div>
+            </div>
+        </div>
+
+        <div id="students-page" class="page">
+            <h2>Manage Students</h2>
+            <form onsubmit="addStudent(event)">
+                <input type="text" id="std-name" placeholder="STUDENT NAME" required>
+                <select id="std-branch">
+                    <option value="CSE">CSE</option>
+                    <option value="ECE">ECE</option>
+                    <option value="EEE">EEE</option>
+                    <option value="MECH">MECH</option>
+                    <option value="CIVIL">CIVIL</option>
+                </select>
+                <input type="number" id="std-marks" placeholder="MARKS" min="0" max="100" required>
+                <button type="submit" class="btn-submit">ADD STUDENT</button>
+            </form>
+            <table>
+                <thead>
+                    <tr><th>NAME</th><th>BRANCH</th><th>MARKS</th><th>ACTION</th></tr>
+                </thead>
+                <tbody id="student-table-body"></tbody>
+            </table>
+        </div>
+
+        <div id="events-page" class="page">
+            <h2>Events Calendar</h2>
+            <form onsubmit="addEvent(event)">
+                <input type="text" id="event-title" placeholder="EVENT TITLE" required>
+                <input type="date" id="event-date" required>
+                <button type="submit" class="btn-submit">ADD EVENT</button>
+            </form>
+            <div id="calendar"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // Live Verified Firebase Configuration Details
+        const firebaseConfig = {
+            apiKey: "AIzaSyDjZjvBpyqn1yuJcRLC1ZljrZGrFTv7LhM",
+            authDomain: "html-student-dashboard-project.firebaseapp.com",
+            projectId: "html-student-dashboard-project",
+            storageBucket: "html-student-dashboard-project.firebasestorage.app",
+            messagingSenderId: "891816409405",
+            appId: "1:891816409405:web:f002687f193f354374ed54",
+            measurementId: "G-N3LXE6CMKH"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let students = [];
+        let eventsList = [];
+        let calendar;
+        let marksChart, branchChart;
+
+        // Auto Case Formatting Controls
+        document.addEventListener('input', function (e) {
+            if (e.target.tagName === 'INPUT') {
+                if (e.target.type === 'email') e.target.value = e.target.value.toLowerCase();
+                else if (e.target.type === 'text') e.target.value = e.target.value.toUpperCase();
+            }
+        });
+
+        // 🔐 Security Session Check
+        auth.onAuthStateChanged(user => {
+            const navButtons = document.querySelectorAll('.sidebar button');
+            if (user) {
+                // If logged in, activate navigation controls and sync background streams
+                navButtons.forEach(btn => btn.style.display = 'block');
+                loadDataFromFirebase();
+            } else {
+                // Force user back to Auth block if session expires or logs out
+                navButtons.forEach(btn => btn.style.display = 'none');
+                showPage('auth-page');
+            }
+        });
+
+        // 🔒 Firebase Sign In Router Handler
+        function handleSignIn(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            auth.signInWithEmailAndPassword(email, password)
+                .then(() => {
+                    // Trigger dynamic dashboard entry immediately on success
+                    showPage('dashboard-page');
+                })
+                .catch(error => alert("ERROR: " + error.message));
+        }
+
+        // 📝 Firebase Registration Router Handler
+        function handleRegister(e) {
+            e.preventDefault();
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+
+            auth.createUserWithEmailAndPassword(email, password)
+                .then(() => {
+                    alert("REGISTRATION SUCCESSFUL!");
+                    // Trigger dynamic dashboard entry immediately on success
+                    showPage('dashboard-page');
+                })
+                .catch(error => alert("ERROR: " + error.message));
+        }
+
+        // 🚪 Firebase Session Destroyer
+        function handleLogout() {
+            auth.signOut();
+        }
+
+        // Real-time Database Stream Listeners
+        function loadDataFromFirebase() {
+            db.collection("students").onSnapshot(snapshot => {
+                students = [];
+                snapshot.forEach(doc => {
+                    let data = doc.data();
+                    data.id = doc.id;
+                    students.push(data);
+                });
+                renderTable();
+            });
+
+            db.collection("events").onSnapshot(snapshot => {
+                eventsList = [];
+                if(calendar) calendar.removeAllEvents();
+                snapshot.forEach(doc => {
+                    let eventData = doc.data();
+                    eventsList.push(eventData);
+                    if(calendar) calendar.addEvent(eventData);
+                });
+            });
+        }
+
+        function addStudent(e) {
+            e.preventDefault();
+            const name = document.getElementById('std-name').value.toUpperCase();
+            const branch = document.getElementById('std-branch').value;
+            const marks = parseInt(document.getElementById('std-marks').value);
+
+            db.collection("students").add({ name, branch, marks })
+                .then(() => {
+                    document.getElementById('std-name').value = "";
+                    document.getElementById('std-marks').value = "";
+                    alert("STUDENT RECORD ADDED!");
+                })
+                .catch(error => alert("Error adding student: " + error.message));
+        }
+
+        function deleteStudent(id) {
+            if(confirm("ARE YOU SURE YOU WANT TO DELETE THIS STUDENT?")) {
+                db.collection("students").doc(id).delete()
+                    .catch(error => alert("Error deleting: " + error.message));
+            }
+        }
+
+        function addEvent(e) {
+            e.preventDefault();
+            const title = document.getElementById('event-title').value.toUpperCase();
+            const date = document.getElementById('event-date').value;
+
+            db.collection("events").add({ title: title, start: date })
+                .then(() => {
+                    alert("EVENT ADDED SUCCESSFULLY!");
+                    document.getElementById('event-title').value = "";
+                    document.getElementById('event-date').value = "";
+                })
+                .catch(error => alert("Error adding event: " + error.message));
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('student-table-body');
+            if (tbody) {
+                tbody.innerHTML = "";
+                students.forEach(student => {
+                    tbody.innerHTML += `<tr>
+                        <td>${student.name}</td>
+                        <td>${student.branch}</td>
+                        <td>${student.marks}</td>
+                        <td><button class="btn-delete" onclick="deleteStudent('${student.id}')">DELETE</button></td>
+                    </tr>`;
+                });
+            }
+            updateCharts();
+        }
+
+        // Router Navigation Interceptor Firewall
+        function showPage(pageId) {
+            if(!auth.currentUser && pageId !== 'auth-page') {
+                showPage('auth-page');
+                return;
+            }
+
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+            
+            const target = document.getElementById(pageId);
+            if(target) target.classList.add('active');
+
+            const btn = document.getElementById('btn-' + pageId.replace('-page', ''));
+            if(btn) btn.classList.add('active');
+
+            if(pageId === 'events-page' && calendar) { 
+                setTimeout(() => { calendar.render(); }, 200); 
+            }
+        }
+
+        function toggleAuth(showSignIn) {
+            document.getElementById('signin-box').style.display = showSignIn ? 'block' : 'none';
+            document.getElementById('register-box').style.display = showSignIn ? 'none' : 'block';
+        }
+
+        // Real-time Computation Logic for Charts
+        function updateCharts() {
+            let divisions = { 'DISTINCTION (>=75)': 0, 'FIRST CLASS (60-74)': 0, 'PASS (35-59)': 0, 'FAIL (<35)': 0 };
+            let branchCounts = { 'CSE': 0, 'ECE': 0, 'EEE': 0, 'MECH': 0, 'CIVIL': 0 };
+
+            students.forEach(s => {
+                if(s.marks >= 75) divisions['DISTINCTION (>=75)']++;
+                else if(s.marks >= 60) divisions['FIRST CLASS (60-74)']++;
+                else if(s.marks >= 35) divisions['PASS (35-59)']++;
+                else divisions['FAIL (<35)']++;
+
+                if(branchCounts[s.branch] !== undefined) {
+                    branchCounts[s.branch]++;
+                }
+            });
+
+            if(marksChart && marksChart.data) { 
+                marksChart.data.datasets[0].data = Object.values(divisions); 
+                marksChart.update(); 
+            }
+            
+            if(branchChart && branchChart.data) { 
+                branchChart.data.datasets[0].data = [
+                    branchCounts['CSE'],
+                    branchCounts['ECE'],
+                    branchCounts['EEE'],
+                    branchCounts['MECH'],
+                    branchCounts['CIVIL']
+                ]; 
+                branchChart.update(); 
+            }
+        }
+
+        // Load Engines on Initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvasMarks = document.getElementById('marksChart');
+            if(canvasMarks && typeof Chart !== 'undefined') {
+                marksChart = new Chart(canvasMarks.getContext('2d'), {
+                    type: 'bar',
+                    data: { 
+                        labels: ['DISTINCTION (>=75)', 'FIRST CLASS (60-74)', 'PASS (35-59)', 'FAIL (<35)'], 
+                        datasets: [{ label: 'NUMBER OF STUDENTS', data: [0, 0, 0, 0], backgroundColor: ['#2ECC71', '#3498DB', '#F1C40F', '#E74C3C'] }] 
+                    },
+                    options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+                });
+            }
+
+            const canvasBranch = document.getElementById('branchChart');
+            if(canvasBranch && typeof Chart !== 'undefined') {
+                branchChart = new Chart(canvasBranch.getContext('2d'), {
+                    type: 'pie',
+                    data: { 
+                        labels: ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL'], 
+                        datasets: [{ 
+                            label: 'STUDENT COUNT',
+                            data: [0, 0, 0, 0, 0], 
+                            backgroundColor: ['#E74C3C', '#3498DB', '#9B59B6', '#F1C40F', '#1ABC9C'] 
+                        }] 
+                    },
+                    options: { 
+                        responsive: true,
+                        plugins: {
+                            legend: { position: 'top' },
+                            title: { display: true, text: 'Students Distribution by Branch' }
+                        }
+                    }
+                });
+            }
+
+            const calendarEl = document.getElementById('calendar');
+            if(calendarEl && typeof FullCalendar !== 'undefined') { 
+                calendar = new FullCalendar.Calendar(calendarEl, { initialView: 'dayGridMonth' }); 
+            }
+        });
+    </script>
+</body>
+</html>
